@@ -3,12 +3,14 @@ package watcher
 import (
 	"context"
 	"log"
+	"time"
 
 	"github.com/fsnotify/fsnotify"
 )
 
 //New yields a new goroutine which watches path for file system changes and sends them on a channel
 func New(path string) (<-chan string, context.CancelFunc) {
+	log.Printf("Watching %v for created files", path)
 	ctx, cancel := context.WithCancel(context.Background())
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
@@ -25,19 +27,25 @@ func New(path string) (<-chan string, context.CancelFunc) {
 
 //loop runs in its own goroutine and sends events on create events
 func loop(ctx context.Context, w *fsnotify.Watcher, path string, c chan string) {
+	name := ""
 	for {
+		timer := time.NewTimer(10 * time.Second)
 		select {
 		case event := <-w.Events:
-			log.Println("event:", event)
 			if event.Op&fsnotify.Create == fsnotify.Create {
-				c <- event.Name
-				log.Println("New file:", event.Name)
+				name = event.Name
 			}
 		case err := <-w.Errors:
 			log.Println("error:", err)
 		case <-ctx.Done():
 			close(c)
 			return
+		case <-timer.C:
+			if name != "" {
+				c <- name
+				name = ""
+			}
 		}
+		timer.Stop()
 	}
 }
